@@ -1,11 +1,7 @@
-import { rampingVUs, sharedIterations, rampingArrivalRate } from "../config/scenarios";
+import { rampingVUs, sharedIterations } from "../config/scenarios";
 
 export const customOptions = {
-import { rampingArrivalRate } from "../config/scenarios";
     thresholds: {
-        create_item_duration: ['p(95)<400'],
-        edit_item_duration: ['p(95)<400'],
-        delete_item_duration: ['p(95)<400'],
         http_req_duration: ['p(90)<400', 'p(95)<400', 'p(99)<400'],
         http_req_failed: ['rate<0.01'],
 

@@ -5,9 +5,8 @@
   "main": "index.js",
   "scripts": {
     "build": "webpack",
-    "test": "webpack && dotenv k6 run dist/ramping-arrival-notes-crud.js",
     "test:e2e": "webpack && dotenv k6 run dist/e2e.js",
-    "test:ramping-arrival-notes": "webpack && dotenv k6 run dist/ramping-arrival-notes.js"
+    "ai:test": "webpack && dotenv k6 run dist/tesseract-cubes-flow.js"
   },
   "repository": {
     "type": "git",

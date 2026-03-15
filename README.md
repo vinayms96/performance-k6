@@ -8,6 +8,7 @@ Performance testing suite for the [Notes API](https://practice.expandtesting.com
 
 ```
 performance-k6/
+├── generate.py             # Unified AI entry point — run from project root
 ├── tests/
 │   └── e2e.ts              # Main test — full CRUD flow on Notes API
 ├── config/
@@ -22,10 +23,16 @@ performance-k6/
 │   └── users.ts            # Test user accounts for login
 ├── prompts/
 │   ├── framework-context.md  # AI context: framework structure, import paths, conventions
-│   └── request.prompt.md       # User-editable: describe what to test, AI generates the script
+│   └── request.prompt.md     # User-editable: describe what to test, AI generates the script
 ├── ai-playground/
-│   ├── openai-script.py    # AI agent: reads prompts/, generates test scripts via OpenAI
-│   └── shell_runner.py     # Agentic loop: executes shell commands returned by the model
+│   ├── requirements.txt    # Python deps: anthropic + openai + python-dotenv
+│   ├── .venv/              # Shared virtual environment
+│   ├── openai/
+│   │   ├── openai-script.py  # OpenAI entry point (gpt-5.1, Responses API)
+│   │   └── shell_runner.py   # Agentic loop + guards for OpenAI
+│   └── claude/
+│       ├── claude-script.py  # Claude entry point (claude-opus-4-6, Messages API)
+│       └── tool_runner.py    # Agentic loop + guards for Claude
 ├── ai-performance/         # AI-generated output (gitignored) — never edit manually
 │   ├── data/               # Only created if custom API needs different constants/payloads
 │   ├── helpers/            # Only created if custom API needs different auth logic
@@ -41,6 +48,7 @@ performance-k6/
 
 - [k6](https://k6.io/docs/get-started/installation/) installed globally
 - Node.js (for `npm install`)
+- Python 3.x (for AI script generation)
 
 ---
 
@@ -94,6 +102,8 @@ Each iteration performs the full CRUD flow: GET → CREATE → EDIT → PATCH �
 ## Scenarios
 
 All scenarios are defined in `config/scenarios.ts` and configured via environment variables. Switch between them by updating the active scenario in `config/options.ts`.
+
+Each scenario object uses `executor: '...' as const` to preserve the literal type required by k6's `Options` type — without it TypeScript widens the value to `string` and the type check fails.
 
 | Scenario | Executor | When to use |
 |----------|----------|-------------|
@@ -165,10 +175,10 @@ Active thresholds:
 
 | Metric | Threshold | Purpose |
 |--------|-----------|---------|
-| `http_req_duration` | `p(90/95/99) < 500ms` | Built-in latency SLO across all requests |
+| `http_req_duration` | `p(90/95/99) < 400ms` | Built-in latency SLO across all requests |
 | `http_req_failed` | `rate < 1%` | Built-in failure rate (k6 marks non-2xx as failed) |
 | `request_count{request:*}` | `count < 10` | Catches steps being skipped or over-executed |
-| `request_duration{request:*}` | `p(90/95/99) < 500ms` | Per-operation latency SLO |
+| `request_duration{request:*}` | `p(90/95/99) < 400ms` | Per-operation latency SLO |
 | `error_rate{request:*}` | `rate < 1%` | Per-operation error rate SLO |
 | `gauge_count{request:*}` | `value > 0` | Confirms a value was observed for each operation |
 
@@ -177,20 +187,46 @@ Active thresholds:
 ## AI Playground
 
 `ai-playground/` contains an AI agent that generates k6 test scripts from a plain-text description.
+Two AI backends are supported: **Claude** (default) and **OpenAI**.
+
+### Setup (one time)
+
+```bash
+python -m venv ai-playground/.venv
+ai-playground/.venv/bin/pip install -r ai-playground/requirements.txt
+```
+
+Add API keys to `.env`:
+```
+ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=sk-...
+```
 
 ### How it works
 
-1. Edit `prompts/request.prompt.md` — describe the API, scenario, load parameters, and test flow
-2. Run the agent:
+1. Edit `prompts/request.prompt.md` — fill in the USER FORM: api_type, scenario, load parameters, performance targets, test flow
+2. Run from the project root:
    ```bash
-   cd ai-playground
-   python openai-script.py
+   python3 generate.py              # defaults to Claude
+   python3 generate.py --ai claude
+   python3 generate.py --ai openai
    ```
-3. The agent reads `prompts/framework-context.md` (framework rules) and `prompts/request.prompt.md` (your request), then writes the generated test(s) into `ai-performance/`
-4. Run the generated test:
+3. The AI reads `prompts/framework-context.md` (framework rules) and `prompts/request.prompt.md` (your request), explores the framework files via shell commands, and writes generated test(s) into `ai-performance/`
+4. Run the printed command from the project root:
    ```bash
-   dotenv k6 run ai-performance/tests/<name>.ts
+   npm run ai:test
+   # expands to: webpack && dotenv k6 run dist/<name>.js
    ```
+
+### AI backends
+
+| | Claude | OpenAI |
+|---|---|---|
+| Model | `claude-sonnet-4-6` | `gpt-5.1` |
+| Entry point | `ai-playground/claude/claude-script.py` | `ai-playground/openai/openai-script.py` |
+| Extras | Adaptive thinking, prompt caching | — |
+
+Both backends share identical rules, guards, and output behaviour — only the API differs.
 
 ### api_type options
 
@@ -199,4 +235,21 @@ Active thresholds:
 | `framework` | Only `ai-performance/tests/<name>.ts` — reuses all framework files via `../../` imports |
 | `custom` | `ai-performance/data/constants.ts` + test script, plus any files that differ from the framework (custom auth, custom thresholds, custom data) |
 
-For `custom`, files that are identical to the framework (`helpers/metrics.ts`, `config/scenarios.ts`) are always reused via `../../` imports — never duplicated. Only files whose content must differ are created inside `ai-performance/`.
+For `custom`, `helpers/metrics.ts` and `config/scenarios.ts` are always reused via `../../` imports — never duplicated.
+
+`config/options.ts` behaviour differs by type:
+- **framework** — spreads from the framework `config/options.ts` and overrides only what differs
+- **custom** — always self-contained; never spreads from the framework because the framework's options contain Notes-API-specific Trend thresholds that don't exist in other tests and would cause a `no metric name found` runtime error
+
+Only thresholds for HTTP methods actually used in the generated test are included. Named Trend thresholds (`per_operation_thresholds`) are only added when explicitly requested — never invented by the AI.
+
+### Guards
+
+The agentic loop enforces three safety guards on every run:
+
+| Guard | When | What it does |
+|-------|------|--------------|
+| Framework write protection | During generation | Detects and reverts any writes to `data/`, `helpers/`, `config/`, `tests/` |
+| Stray file protection | During generation | Removes files written to the wrong directory and re-prompts |
+| Hardcoding violation scanner | After generation | Scans all generated `.ts` files for hardcoded VUs, duration, URLs, or credentials; re-prompts to fix |
+| Text-as-code | After generation | Detects if the model returned code as text instead of writing to disk; re-prompts with path and heredoc rules |
