@@ -137,3 +137,20 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+.python-version
+
+# k6 AI generated scripts (keep folder, ignore output)
+ai-playground/generated/*.ts

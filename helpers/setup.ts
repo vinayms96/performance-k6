@@ -1,6 +1,6 @@
 import http from 'k6/http';
-import { urls } from '../data/constants.ts';
-import { users } from '../data/users.ts';
+import { urls } from '../data/constants';
+import { users } from '../data/users';
 
 /**
  * Logs into the user account
