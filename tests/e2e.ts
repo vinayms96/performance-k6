@@ -1,11 +1,11 @@
 import http, { head, patch } from 'k6/http';
 import { SharedArray } from 'k6/data';
-import { check, group } from 'k6';
-import { healthCheckCall, login } from '../helpers/setup.ts';
-import { urls } from '../data/constants.ts';
-import { notes } from '../data/notes-data.ts'
-import { customOptions } from '../config/options.ts';
-import { requestDuration, requestCount, errorRate, gauge } from '../helpers/metrics.ts';
+import { check } from 'k6';
+import { healthCheckCall, login } from '../helpers/setup';
+import { urls } from '../data/constants';
+import { notes } from '../data/notes-data'
+import { customOptions } from '../config/options';
+import { requestDuration, requestCount, errorRate, gauge } from '../helpers/metrics';
 
 const sharedData = new SharedArray('notesData', function () {
     return notes;
@@ -24,7 +24,7 @@ export function setup() {
     return { token };
 }
 
-export default async function (data: { token: any; }) {
+export default function (data: { token: any; }) {
     const params = { headers: { 'x-auth-token': data.token, 'Content-Type': 'application/json' } };
 
 
@@ -50,8 +50,8 @@ export default async function (data: { token: any; }) {
 
     // Create API call
     const createResp = http.post(`${urls.baseUrl}${urls.notes}`, JSON.stringify(pickedArray), params);
-    const createBody = await JSON.parse(createResp.body as string);
-    const noteId: string = await createBody.data.id;
+    const createBody = JSON.parse(createResp.body as string);
+    const noteId: string = createBody.data.id;
 
     check(createResp, {
         'create status is 200': (resp) => resp.status === 200,

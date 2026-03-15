@@ -4,7 +4,10 @@
   "description": "Performance testing using k6 tool",
   "main": "index.js",
   "scripts": {
-    "test": "dotenv k6 run tests/e2e.ts"
+    "build": "webpack",
+    "test": "webpack && dotenv k6 run dist/ramping-arrival-notes-crud.js",
+    "test:e2e": "webpack && dotenv k6 run dist/e2e.js",
+    "test:ramping-arrival-notes": "webpack && dotenv k6 run dist/ramping-arrival-notes.js"
   },
   "repository": {
     "type": "git",
@@ -18,8 +21,14 @@
   },
   "homepage": "https://github.com/vinayms96/performance-k6#readme",
   "devDependencies": {
+    "@babel/core": "^7.26.0",
+    "@babel/preset-env": "^7.26.0",
+    "@babel/preset-typescript": "^7.26.0",
     "@types/k6": "^1.6.0",
     "@types/node": "^25.3.5",
-    "dotenv-cli": "^11.0.0"
+    "babel-loader": "^9.2.1",
+    "dotenv-cli": "^11.0.0",
+    "webpack": "^5.97.0",
+    "webpack-cli": "^5.1.4"
   }
 }

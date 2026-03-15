@@ -12,7 +12,7 @@ performance-k6/
 │   └── e2e.ts              # Main test — full CRUD flow on Notes API
 ├── config/
 │   ├── options.ts          # k6 options: thresholds + active scenario
-│   └── scenarios.ts        # All 6 executor scenario configs
+│   └── scenarios.ts        # All 6 executor scenario configs (all values from .env)
 ├── helpers/
 │   ├── setup.ts            # login() and healthCheckCall() used in setup()
 │   └── metrics.ts          # Custom metric declarations (Counter, Trend, Rate, Gauge)
@@ -20,6 +20,17 @@ performance-k6/
 │   ├── constants.ts        # Base URL and endpoint paths
 │   ├── notes-data.ts       # Test note payloads (SharedArray data)
 │   └── users.ts            # Test user accounts for login
+├── prompts/
+│   ├── framework-context.md  # AI context: framework structure, import paths, conventions
+│   └── request.prompt.md       # User-editable: describe what to test, AI generates the script
+├── ai-playground/
+│   ├── openai-script.py    # AI agent: reads prompts/, generates test scripts via OpenAI
+│   └── shell_runner.py     # Agentic loop: executes shell commands returned by the model
+├── ai-performance/         # AI-generated output (gitignored) — never edit manually
+│   ├── data/               # Only created if custom API needs different constants/payloads
+│   ├── helpers/            # Only created if custom API needs different auth logic
+│   ├── config/             # Only created if custom API needs different thresholds
+│   └── tests/              # Generated test scripts
 ├── .env                    # Environment variables (not committed)
 └── package.json
 ```
@@ -89,9 +100,11 @@ All scenarios are defined in `config/scenarios.ts` and configured via environmen
 | `sharedIterations` | `shared-iterations` | Fixed total iterations split across VUs — best for measuring throughput |
 | `perVUIterations` | `per-vu-iterations` | Each VU runs the same number of iterations — useful for partitioned test data |
 | `constantVUs` | `constant-vus` | Fixed VU count for a set duration — standard soak/load test |
-| `rampingVUs` | `ramping-vus` | VUs ramp up and down in stages — stress/spike tests |
+| `rampingVUs` | `ramping-vus` | VUs ramp up/down across 3 stages — stress/spike tests |
 | `constantArrivalRate` | `constant-arrival-rate` | Fixed iteration rate (RPS) independent of response time |
-| `rampingArrivalRate` | `ramping-arrival-rate` | Iteration rate ramps up/down — for gradual load increase tests |
+| `rampingArrivalRate` | `ramping-arrival-rate` | Iteration rate ramps up/down across 3 stages — gradual load increase |
+
+`rampingVUs` and `rampingArrivalRate` use 3 configurable stages driven by `STAGE_DURATION_*` and `STAGE_TARGET_*` env vars (see [Environment Variables](#environment-variables)).
 
 ---
 
@@ -99,20 +112,26 @@ All scenarios are defined in `config/scenarios.ts` and configured via environmen
 
 Defined in `.env` and injected at runtime via `dotenv-cli`.
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `PASSWORD` | Login password for test accounts | `secret123` |
-| `VUS` | Number of virtual users | `3` |
-| `ITERATIONS` | Total/per-VU iterations | `3` |
-| `DURATION` | Test duration (for time-based executors) | `10s` |
-| `MAX_DURATION` | Max allowed duration | `10s` |
-| `START_VUS` | Starting VUs for ramping scenarios | `0` |
-| `GRACEFUL_RAMPDOWN` | Grace period before force-stopping VUs | `0s` |
-| `RATE` | Target iteration rate (arrival rate scenarios) | `5` |
-| `START_RATE` | Starting rate for ramping arrival rate | `0` |
-| `TIME_UNIT` | Time window for rate (e.g. `1s` = per second) | `1s` |
-| `PRE_ALLOCATED_VUS` | Pre-allocated VUs for arrival rate scenarios | `3` |
-| `MAX_VUS` | Max VUs for ramping arrival rate | `3` |
+| Variable | Used by | Description | Example |
+|----------|---------|-------------|---------|
+| `PASSWORD` | setup | Login password for test accounts | `secret123` |
+| `VUS` | constantVUs, sharedIterations, perVUIterations | Number of virtual users | `3` |
+| `ITERATIONS` | sharedIterations, perVUIterations | Total or per-VU iterations | `3` |
+| `DURATION` | constantVUs, constantArrivalRate | Test duration | `10s` |
+| `MAX_DURATION` | sharedIterations, perVUIterations | Hard time ceiling | `10s` |
+| `START_VUS` | rampingVUs | VU count before first ramp stage | `0` |
+| `GRACEFUL_RAMPDOWN` | rampingVUs | Grace period before force-stopping VUs | `0s` |
+| `STAGE_DURATION_1` | rampingVUs, rampingArrivalRate | Duration of stage 1 | `10s` |
+| `STAGE_TARGET_1` | rampingVUs, rampingArrivalRate | Target VUs (or RPS) at end of stage 1 | `5` |
+| `STAGE_DURATION_2` | rampingVUs, rampingArrivalRate | Duration of stage 2 | `20s` |
+| `STAGE_TARGET_2` | rampingVUs, rampingArrivalRate | Target VUs (or RPS) at end of stage 2 | `10` |
+| `STAGE_DURATION_3` | rampingVUs, rampingArrivalRate | Duration of stage 3 | `10s` |
+| `STAGE_TARGET_3` | rampingVUs, rampingArrivalRate | Target VUs (or RPS) at end of stage 3 | `0` |
+| `RATE` | constantArrivalRate | Target iteration rate per `TIME_UNIT` | `5` |
+| `START_RATE` | rampingArrivalRate | Starting rate before ramp | `0` |
+| `TIME_UNIT` | constantArrivalRate, rampingArrivalRate | Time window for rate (e.g. `1s` = per second) | `1s` |
+| `PRE_ALLOCATED_VUS` | constantArrivalRate, rampingArrivalRate | Pre-allocated VUs | `3` |
+| `MAX_VUS` | constantArrivalRate, rampingArrivalRate | Upper VU ceiling | `3` |
 
 ---
 
@@ -133,7 +152,16 @@ All metrics are tagged with `{ request: 'GET|POST|PUT|PATCH|DELETE', resource: '
 
 ## Thresholds
 
-Defined in `config/options.ts`.
+Defined in `config/options.ts`. Choose the threshold type based on what you want to assert:
+
+| Type | Syntax | When to use |
+|------|--------|-------------|
+| **Counter** | `count < N` | Verify total requests made; catches skipped/over-executed steps. Avoid with `rampingVUs` at high concurrency — inflated totals will breach fixed limits. |
+| **Trend** | `p(90/95/99) < Nms` | Enforce latency SLOs per operation. Always include in load, stress, and soak tests. |
+| **Rate** | `rate < 0.01` | Fail the test if error frequency exceeds a threshold. Always pair with Trend thresholds. |
+| **Gauge** | `value > N` / `value < N` | Assert the last observed point-in-time value (e.g. note count, response size). Not an aggregate. |
+
+Active thresholds:
 
 | Metric | Threshold | Purpose |
 |--------|-----------|---------|
@@ -143,3 +171,32 @@ Defined in `config/options.ts`.
 | `request_duration{request:*}` | `p(90/95/99) < 500ms` | Per-operation latency SLO |
 | `error_rate{request:*}` | `rate < 1%` | Per-operation error rate SLO |
 | `gauge_count{request:*}` | `value > 0` | Confirms a value was observed for each operation |
+
+---
+
+## AI Playground
+
+`ai-playground/` contains an AI agent that generates k6 test scripts from a plain-text description.
+
+### How it works
+
+1. Edit `prompts/request.prompt.md` — describe the API, scenario, load parameters, and test flow
+2. Run the agent:
+   ```bash
+   cd ai-playground
+   python openai-script.py
+   ```
+3. The agent reads `prompts/framework-context.md` (framework rules) and `prompts/request.prompt.md` (your request), then writes the generated test(s) into `ai-performance/`
+4. Run the generated test:
+   ```bash
+   dotenv k6 run ai-performance/tests/<name>.ts
+   ```
+
+### api_type options
+
+| Value | What gets generated |
+|-------|---------------------|
+| `framework` | Only `ai-performance/tests/<name>.ts` — reuses all framework files via `../../` imports |
+| `custom` | `ai-performance/data/constants.ts` + test script, plus any files that differ from the framework (custom auth, custom thresholds, custom data) |
+
+For `custom`, files that are identical to the framework (`helpers/metrics.ts`, `config/scenarios.ts`) are always reused via `../../` imports — never duplicated. Only files whose content must differ are created inside `ai-performance/`.
