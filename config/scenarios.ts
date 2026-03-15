@@ -1,7 +1,7 @@
 // Below two scenarios come under "By number of iterations."
 /* This executor is suitable when you want a specific number of VUs to complete a fixed number of total iterations, and the amount of iterations per VU is unimportant. If the time to complete a number of test iterations is your concern, this executor should perform best. */
 export const sharedIterations = {
-    executor: 'shared-iterations',
+    executor: 'shared-iterations' as const,
     vus: parseInt(__ENV.VUS),
     iterations: parseInt(__ENV.ITERATIONS),
     maxDuration: __ENV.MAX_DURATION
@@ -9,7 +9,7 @@ export const sharedIterations = {
 
 // Use this executor if you need a specific number of VUs to complete the same number of iterations. This can be useful when you have fixed sets of test data that you want to partition between VUs.
 export const perVUIterations = {
-    executor: 'per-vu-iterations',
+    executor: 'per-vu-iterations' as const,
     vus: parseInt(__ENV.VUS),
     iterations: parseInt(__ENV.ITERATIONS),
     maxDuration: __ENV.MAX_DURATION
@@ -18,14 +18,14 @@ export const perVUIterations = {
 // Below two scenarios come under "By number of VUs."
 // Use this executor if you need a specific number of VUs to run for a certain amount of time.
 export const constantVUs = {
-    executor: 'constant-vus',
+    executor: 'constant-vus' as const,
     vus: parseInt(__ENV.VUS),
     duration: __ENV.DURATION
 }
 
 // This executor is a good fit if you need VUs to ramp up or down during specific periods of time.
 export const rampingVUs = {
-    executor: 'ramping-vus',
+    executor: 'ramping-vus' as const,
     startVUs: parseInt(__ENV.START_VUS),
     stages: [
         { duration: __ENV.STAGE_DURATION_1, target: parseInt(__ENV.STAGE_TARGET_1) },
@@ -38,7 +38,7 @@ export const rampingVUs = {
 // Below two scenarios come under "By iteration rate."
 // When you want iterations to remain constant, independent of the performance of the system under test. This approach is useful for a more accurate representation of RPS
 export const constantArrivalRate = {
-    executor: 'constant-arrival-rate',
+    executor: 'constant-arrival-rate' as const,
     duration: __ENV.DURATION,
     rate: parseInt(__ENV.RATE),
     timeUnit: __ENV.TIME_UNIT,
@@ -48,7 +48,7 @@ export const constantArrivalRate = {
 
 // If you need start iterations independent of system-under-test performance, and want to ramp the number of iterations up or down during specific periods of time.
 export const rampingArrivalRate = {
-    executor: 'ramping-arrival-rate',
+    executor: 'ramping-arrival-rate' as const,
     startRate: parseInt(__ENV.START_RATE),
     timeUnit: __ENV.TIME_UNIT,
     stages: [

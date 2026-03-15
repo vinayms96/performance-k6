@@ -4,7 +4,7 @@ module.exports = {
   mode: 'production',
   entry: {
     'e2e': './tests/e2e.ts',
-    'ramping-arrival-notes-crud': './ai-performance/tests/ramping-arrival-notes-crud.ts',
+    'tesseract-cubes-flow': './ai-performance/tests/tesseract-cubes-flow.ts',
   },
   output: {
     path: path.resolve(__dirname, 'dist'),
